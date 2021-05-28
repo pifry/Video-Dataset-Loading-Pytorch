@@ -97,34 +97,45 @@ class VideoRecord(object):
     
     @property
     def start_file_idx(self):
-        return int(self._data[1].split('.', 1)[0])
+        return int(self._data[1].split('.', 1)[0].strip())
 
     @property
     def start_frame(self):
         if '.' in self._data[1]:
-            return int(self._data[1].split('.', 1)[1])
+            return int(self._data[1].split('.', 1)[1].strip())
         else:
             return 0
 
     @property
     def end_file_idx(self):
-        return int(self._data[2].split('.', 1)[0])
+        return int(self._data[2].split('.', 1)[0].strip())
 
     @property
     def end_frame(self):
         if '.' in self._data[2]:
-            return int(self._data[2].split('.', 1)[1])
+            return int(self._data[2].split('.', 1)[1].strip())
         else:
             return self.files_frames[-1] - 1
+
+    def _parse_label(self, value):
+        try:
+            return int(self._data[3])
+        except ValueError:
+            pass
+        try:
+            return float(self._data[3])
+        except ValueError:
+            pass
+        return self._data[3]
 
     @property
     def label(self):
         # just one label_id
         if len(self._data) == 4:
-            return int(self._data[3])
+            return self._parse_label(self._data[3])    
         # sample associated with multiple labels
         else:
-            return [int(label_id) for label_id in self._data[3:]]
+            return [self._parse_label(label_id) for label_id in self._data[3:]]
 
     def __repr__(self) -> str:
         return str(type(self)) + f'{self._data}'
@@ -206,6 +217,7 @@ class VideoFrameDataset(torch.utils.data.Dataset):
                  raw_video_size = None,
                  transform = None,
                  random_shift: bool = True,
+                 label_override = None,
                  test_mode: bool = False):
         super(VideoFrameDataset, self).__init__()
 
@@ -224,6 +236,7 @@ class VideoFrameDataset(torch.utils.data.Dataset):
         self.transform = transform
         self.random_shift = random_shift
         self.test_mode = test_mode
+        self.label_override = label_override
 
         self._parse_list()
 
@@ -252,8 +265,7 @@ class VideoFrameDataset(torch.utils.data.Dataset):
                 raise NotImplementedError
 
     def _parse_list(self):
-        self.video_list = [VideoRecord(x.strip().split(' '), self.root_path, self.imagefile_template, self.video_meta) for x in open(self.annotationfile_path)]
-        print(self.video_list)
+        self.video_list = [VideoRecord(x.strip().split(), self.root_path, self.imagefile_template, self.video_meta) for x in open(self.annotationfile_path)]
 
     def _sample_indices(self, record):
         """
@@ -365,7 +377,10 @@ class VideoFrameDataset(torch.utils.data.Dataset):
         if self.transform is not None:
             images = self.transform(images)
 
-        return images, record.label
+        if self.label_override:
+            return images, self.label_override
+        else:
+            return images, record.label
 
     def __len__(self):
         return len(self.video_list)
